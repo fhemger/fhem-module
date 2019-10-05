@@ -456,6 +456,10 @@ my %wolf_DPT_Types = (
 			'NoDem', # 20
 		],
 	},
+	#UNKNOWN
+	UNKNOWN => {
+		PDT => 'UNKNOWN',
+	},
 ); # DPT_Types
 
 # Wolf PDT Datatypes
@@ -663,6 +667,11 @@ my %wolf_PDT_Types = (
 			Template => 'C',
 			Encode => sub { return pack("C", $_[1]); }, # value -> bytes
 			Decode => sub { return unpack("C", $_[1]); }, # bytes -> value
+	},
+	#UNKNOWN
+	UNKNOWN => {
+		Template => 'a*',
+		Decode => sub { return "0x".unpack("H*", $_[1]); }, # hexdump
 	},
 ); # PDT_Type
 
@@ -1383,6 +1392,8 @@ sub wolf_Parse($$) {
 	# Dpid DPcmd DPlength DPvalue
 	my ($DPid, $DPcmd, $DPlength, $DPvaluehex) = split(/ /, $_[1], 4);
 
+	return undef if(!defined($DPvaluehex));
+
 	Log3 $sname, 5, "$name Parse $DPid $DPcmd $DPlength $DPvaluehex";
 
 	if(length($DPvaluehex) % 2 != 0) {
@@ -1402,11 +1413,7 @@ sub wolf_Parse($$) {
 		 if(AttrVal($sname, "createunknowndatapoints", 0)) {
 			# Debug
 			#Create dummy dpid for unknown datapoints
-			my $dpt = "DPT_Scaling";
-			$dpt = "DPT_Value_Temp" if($DPlength == 2);
-			$dpt = "DPT_TimeOfDay" if($DPlength == 3);
-			$dpt = "DPT_ActiveEnergy" if($DPlength == 4);
-			$dpid_type = { Name => "Unknown $DPid", Device => "UNKNOWN", DPT => $dpt };
+			$dpid_type = { Name => "Unknown $DPid", Device => "UNKNOWN", DPT => 'UNKNOWN' };
 			$wolf_DPID_Types{$DPid} = $dpid_type;
 		} else {
 			return undef;
@@ -1749,11 +1756,6 @@ sub wolf_makeReadingName($) {
             <li><i>createunknowndatapoints</i> 0, 1<br>
                 Default: 0<br><br>
 				If 1 will create an wolf_[serverdevice]_UNKNOWN device with all unknown datapoints as readings.(unknown_[id])<br>
-				Datatypes depend an value length.<br>
-				1 byte = DPT_Scaling<br>
-				2 bytes = DPT_Value_Temp<br>
-				3 bytes = DPT_TimeOfDay<br>
-				4 bytes	= DPT_ActiveEnergy<br><br>
             </li>
         </ul>
     </ul>
