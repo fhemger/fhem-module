@@ -1059,31 +1059,31 @@ sub wolf_doDatapoints($$) {
 	while($datapoints) {
 
 		last if(length($datapoints) < 5);
-		
+
 		# Dpid DPcmd DPlength DPvalue
 		my ($DPid, $DPcmd, $DPlength, $DPvaluebytes);
 		($DPid, $DPcmd, $DPlength, $datapoints)  = unpack("n C C a*", $datapoints);
-		
+
 		if(!defined($wolf_DPID_Types{$DPid})) {
 			Log3 $sname, 1, "$sname Unknown Datapoint ID: $DPid $DPcmd $DPlength Datapoints: 0x".unpack("H*", $datapoints);
 			
 			# Debug attribute unknown see parseFns also
 			next if(!AttrVal($sname, "createunknowndatapoints", 0));
 		}
-		
+
 		# get bytes of DP length
 		($DPvaluebytes, $datapoints) = unpack("a$DPlength a*", $datapoints);
-		
-		my $msg = "$DPid $DPcmd $DPlength $DPvaluebytes";
-		my $logmsg = "$DPid $DPcmd $DPlength 0x".unpack("H*",$DPvaluebytes);
-		
-		Log3 $sname, 5, "$name Dispatch \"$logmsg\"";
+
+		my $DPvaluehex = unpack("H*", $DPvaluebytes);
+		my $msg = "$DPid $DPcmd $DPlength $DPvaluehex";
+
+		Log3 $sname, 5, "$name Dispatch \"$msg\"";
 		my @found = Dispatch($defs{$sname}, $msg); # addvals?
-		
+
 		my $fdev = $found[0][0];
-		
+
 		if(!defined($fdev)) {
-			Log3 $sname, 4, "$sname Dispatch returns undef msg: $logmsg";
+			Log3 $sname, 4, "$sname Dispatch returns undef msg: $msg";
 			#return;
 		}
 	}
@@ -1381,13 +1381,21 @@ sub wolf_Parse($$) {
 	return if(IsDisabled($sname));
 
 	# Dpid DPcmd DPlength DPvalue
-	my ($DPid, $DPcmd, $DPlength, $DPvaluebytes) = split(/ /, $_[1], 4);
-	
-	Log3 $sname, 5, "$name Parse $DPid $DPcmd $DPlength 0x".unpack("H*", $DPvaluebytes);
-	
+	my ($DPid, $DPcmd, $DPlength, $DPvaluehex) = split(/ /, $_[1], 4);
+
+	Log3 $sname, 5, "$name Parse $DPid $DPcmd $DPlength $DPvaluehex";
+
+	if(length($DPvaluehex) % 2 != 0) {
+		$DPvaluehex = "0$DPvaluehex" ;
+		Log3 $sname, 4, "$sname Prepend 0 to hex value -> $DPvaluehex";
+	};
+
+	# will append 0 if not 2x
+	my $DPvaluebytes = pack("H*", $DPvaluehex);
+
 	# get Datapoint settings
 	my $dpid_type = $wolf_DPID_Types{$DPid};
-	
+
 	if(!defined($dpid_type)) {
 		Log3 $sname, 1, "$name Unknown Datapoint ID $DPid";
 		
@@ -1404,16 +1412,16 @@ sub wolf_Parse($$) {
 			return undef;
 		}
 	}
-	
+
 	my $dpt_type = $wolf_DPT_Types{$dpid_type->{DPT}};
 	my $pdt_type = $wolf_PDT_Types{$dpt_type->{PDT}};
-	
+
 	my $DPName = $dpid_type->{Name};
 	my $device = $dpid_type->{Device};
 	my $alias = $wolf_DPT_Devices{$device};
 	my $state = defined($dpid_type->{State}) ? $dpid_type->{State} : 0;
 	my $unit = defined($dpt_type->{Unit}) ? $dpt_type->{Unit} : '';
-	
+
 	Log3 $name, 5, "$name DPTInfo DPid: $DPid DPT Type: ".$dpid_type->{DPT}." PDT Type: ".$dpt_type->{PDT}." Name: $DPName Device: $device Unit: $unit State: $state DeviceAlias: $alias";
 
 	my $type = $defs{$sname}->{TYPE};
@@ -1424,11 +1432,11 @@ sub wolf_Parse($$) {
 		Log3 $sname, 2, "$name unknown/new device: \"$ret\" for DPID: $DPid Value bytes: 0x".unpack("H*", $DPvaluebytes);
 		return $ret;
 	}
-	
+
 	my $devhash = $modules{$type}{defptr}{$devname}; # get hash for device to update
-		
+
 	my $DecodedValue = wolf_decodeDPTvalue($devname,$DPid,$DPvaluebytes);
-	
+
 	if(!defined($DecodedValue)) {
 		Log3 $devname, 1, "$devname Invalid Data for Datapoint: ID: $DPid Name: $DPName DPcmd: 0x".unpack('H*',$DPcmd)." Length: $DPlength bytes: 0x".unpack('H*',$DPvaluebytes)." decoded Value: undef Unit: $unit";
 		return $devname; # no readings
@@ -1436,19 +1444,19 @@ sub wolf_Parse($$) {
 
 	#Format Value translate
 	my $Value = wolf_formatDPTvalue($devname, $DPid, $DecodedValue, 1,0); # translate ,no unit
-		
+
 	Log3 $devname, 4, "$devname Datapoint: ID: $DPid Name: $DPName DPcmd: 0x".unpack('H*',$DPcmd)." Length: $DPlength bytes: 0x".unpack('H*',$DPvaluebytes)." decoded Value: $DecodedValue Value: $Value Unit: $unit";
-	
+
 	my $readingname = wolf_makeReadingName($DPName);
 	Log3 $devname, 5, "$devname Datapoint: ID: $DPid using reading name: $readingname";
-	
+
 	readingsBeginUpdate($devhash);
 	my $rv = readingsBulkUpdateIfChanged($devhash, "$readingname.DPID", $DPid);
 	Log3 $devname, 4, "$devname Update reading $rv" if(defined($rv));
 
 	$rv = readingsBulkUpdate($devhash, $readingname, $Value);
 	Log3 $devname, 4, "$devname Update reading $rv";
-	
+
 	if($Value ne $DecodedValue) {
 		$rv = readingsBulkUpdate($devhash, "$readingname.Value", $DecodedValue);
 		Log3 $devname, 4, "$devname Update reading $rv" if(defined($rv));
@@ -1461,7 +1469,7 @@ sub wolf_Parse($$) {
 
 	#update state
 	if($state) {
-	
+
 		my $stateval;
 		foreach my $reading (split(/, ?/, $state)) {
 			my $prefix;
@@ -1472,13 +1480,13 @@ sub wolf_Parse($$) {
 			Log3 $devname, 1, "$devname Update State with Reading \"$reading\" -> \"$stateval\"";
 		}	
 		chomp($stateval);
-	
+
 		$rv = readingsBulkUpdate($devhash, "state", $stateval);
 		Log3 $devname, 4, "$devname Update reading $rv";
 	}
-	
+
 	readingsEndUpdate($devhash, 1);
-	
+
 	return $devname;
 } # Parse
 
@@ -1560,7 +1568,7 @@ sub wolf_checkvaluerange($$$) {
 
 sub wolf_Set($@) {
 	my ( $hash, $name, $cmd, @args ) = @_;
-	
+
 	if($cmd eq "restartserver") {
 		wolf_InitServer($hash);
 	} elsif($cmd eq "wolf_parse") {
@@ -1571,13 +1579,15 @@ sub wolf_Set($@) {
 		my ($dpid, $value) = @args;
 		return "0x".unpack("H*", wolf_encodeDPTvalue($name, $dpid, $value));
 	} elsif($cmd eq "wolf_decode") {
-		my ($dpid, $value) = @args;
-		$value =~ s/([[:xdigit:]]{2})/chr(hex($1))/eg;
-		return wolf_formatDPTvalue($name, $dpid, wolf_decodeDPTvalue($name, $dpid, $value), 1 ,1);
+		my ($dpid, $valuehex) = @args;
+		$valuehex =~ s/^0x//;
+		$valuehex = "0$valuehex" if(length($valuehex) % 2 != 0);
+		my $valuebyte = pack("H*", $valuehex);
+		return wolf_formatDPTvalue($name, $dpid, wolf_decodeDPTvalue($name, $dpid, $valuebyte), 1 ,1);
 	} elsif($cmd ne "?" && grep(/^$cmd$/, keys( %{$hash->{Inputs}}))) {	
 		my $dpid = $hash->{Inputs}{$cmd};
 		my $value = $args[0];
-		
+
 		Log3 $name, 5, "$name Set Input ID: $dpid Name: $cmd Value: $value";
 
 		if(!defined($value)) {
@@ -1588,19 +1598,19 @@ sub wolf_Set($@) {
 
 		my $dpid_type = $wolf_DPID_Types{$dpid};
 		my $dpt_type = $wolf_DPT_Types{$dpid_type->{DPT}};
-		
+
 		if(defined($dpt_type->{Translate})) {
 			#reverse translate  makeReadingName values
 			my @argslist = wolf_getDPTArgs($name, $dpid); # "name originalindex"
-			
+
 			my @match = grep( s/^\Q$value\E\s//, @argslist);
-			
+
 			if(scalar @match != 1) {
 				my $msg = "$name set $cmd Multiple/No matches for \"$value\"";
 				Log3 $name, 1, $msg;
 				return $msg;				
 			}
-			
+
 			$value = $match[0];
 		}
 
@@ -1610,7 +1620,7 @@ sub wolf_Set($@) {
 			Log3 $name, 1, "$name set $cmd $msg";
 			return $msg;
 		};
-		
+
 		#		
 		Log3 $name, 4, "$name Set Execute ID: $dpid Name: $cmd Value: $value";
 		
@@ -1708,7 +1718,7 @@ sub wolf_makeReadingName($) {
 			</li>
 			<li><i>wolf_parse</i><br>
 				parse datapoint.<br>
-				Format: id cmd value<br><br>
+				Format: id cmd length hexvalue<br><br>
 			</li>
         </ul>
     </ul>
