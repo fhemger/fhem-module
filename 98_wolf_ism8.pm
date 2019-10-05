@@ -1484,7 +1484,7 @@ sub wolf_Parse($$) {
 			$reading = wolf_makeReadingName($reading);
 			
 			$stateval .= "$prefix:".ReadingsVal($devname, $reading, "")." ";
-			Log3 $devname, 1, "$devname Update State with Reading \"$reading\" -> \"$stateval\"";
+			Log3 $devname, 5, "$devname Update State with Reading \"$reading\" -> \"$stateval\"";
 		}	
 		chomp($stateval);
 
