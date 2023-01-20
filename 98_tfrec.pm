@@ -277,6 +277,7 @@ sub tfrec_Read {
 			$hash->{subprocess}->{errorcount} = 0;
 			Log3 $name, 4, "$name Device found: $1";
 			readingsSingleUpdate($hash, "tfrec_device", $1, 0);
+			readingsSingleUpdate($hash, "tfrec_error", '', 0);
 			return;	
 		} elsif ($msg =~ /^Detach|Registering|Dumpmode|AUTO|Samplerate|START/) {
 			$hash->{subprocess}->{errorcount} = 0;
